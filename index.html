@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulación de Suspensión (Masa-Resorte-Amortiguador) + Gestos</title>
+    
+    <!-- MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: #fff;
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #app-container {
+            display: flex;
+            width: 1280px;
+            height: 720px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            position: relative;
+        }
+
+        canvas {
+            display: block;
+            background-color: #87CEEB; /* Cielo base */
+        }
+
+        #control-panel {
+            width: 330px;
+            background-color: #28282d;
+            border-left: 2px solid #646464;
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .control-group label {
+            font-size: 14px;
+            color: #ccc;
+            font-weight: bold;
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+        }
+
+        .btn {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+
+        .btn:hover { background-color: #45a049; }
+        .btn-pause { background-color: #f44336; }
+        .btn-pause:hover { background-color: #da190b; }
+        .btn-reset { background-color: #008CBA; }
+        .btn-reset:hover { background-color: #007399; }
+        .btn-bump { background-color: #ff9800; font-weight: bold; }
+        .btn-bump:hover { background-color: #e68a00; }
+
+        /* HUD de Gestos (sobre el canvas) */
+        #gesture-hud {
+            position: absolute;
+            bottom: 10px;
+            right: 340px; /* Al lado del panel de control */
+            width: 320px;
+            height: 240px;
+            background-color: rgba(30, 35, 45, 0.9);
+            border: 2px solid #50c878;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #gesture-video-container {
+            position: relative;
+            flex-grow: 1;
+            background: #000;
+        }
+
+        #gesture-video-container video {
+            display: none; /* Oculto, procesado por MediaPipe */
+        }
+        
+        #gesture-canvas {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0; left: 0;
+            transform: scaleX(-1); /* Espejo */
+        }
+
+        #gesture-status {
+            background: rgba(15, 18, 28, 0.9);
+            padding: 8px;
+            font-size: 12px;
+            border-top: 1px solid #444;
+            color: #ccc;
+        }
+
+        .status-line {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .param-active {
+            color: #00ffcc;
+            font-weight: bold;
+        }
+
+        /* Indicador visual de qué slider está siendo controlado por gestos */
+        .slider-active {
+            border: 2px solid #00ffcc;
+            padding: 5px;
+            border-radius: 5px;
+            background-color: rgba(0, 255, 204, 0.1);
+        }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <!-- Simulación principal (950x720) -->
+    <canvas id="gameCanvas" width="950" height="720"></canvas>
+    
+    <!-- HUD Gestos -->
+    <div id="gesture-hud">
+        <div id="gesture-video-container">
+            <video id="input_video"></video>
+            <canvas id="gesture-canvas" width="320" height="180"></canvas>
+        </div>
+        <div id="gesture-status">
+            <div class="status-line">
+                <span id="txt-left">IZQ: 0 dedos</span>
+                <span id="txt-right">DER: 0 dedos</span>
+            </div>
+            <div class="status-line">
+                <span id="txt-param" class="param-active">Selección: Ninguna</span>
+                <span id="txt-action"></span>
+            </div>
+            <div style="font-size: 10px; color: #888; margin-top: 4px;">IZQ: 1=c, 2=k, 3=m, 4=v, 5=h | DER: ▲/▼=Ajustar, 👊=Bache</div>
+        </div>
+    </div>
+
+    <!-- Panel de Control (330x720) -->
+    <div id="control-panel">
+        <h2 style="margin-top: 0; font-size: 18px; border-bottom: 1px solid #555; padding-bottom: 10px;">Panel de Control</h2>
+        
+        <div class="control-group" id="group-m">
+            <label id="lbl-m">Masa: 1000 kg</label>
+            <input type="range" id="slider-m" min="500" max="2000" value="1000" step="10">
+        </div>
+        <div class="control-group" id="group-k">
+            <label id="lbl-k">Resorte (k): 20000 N/m</label>
+            <input type="range" id="slider-k" min="5000" max="50000" value="20000" step="100">
+        </div>
+        <div class="control-group" id="group-c">
+            <label id="lbl-c">Amortig. (c): 1500 N·s/m</label>
+            <input type="range" id="slider-c" min="100" max="25000" value="1500" step="50">
+        </div>
+        <div class="control-group" id="group-h">
+            <label id="lbl-h">Prof. Bache: 10 cm</label>
+            <input type="range" id="slider-h" min="2" max="20" value="10" step="0.5">
+        </div>
+        <div class="control-group" id="group-v">
+            <label id="lbl-v">Velocidad: 30 km/h</label>
+            <input type="range" id="slider-v" min="10" max="100" value="30" step="1">
+        </div>
+
+        <div style="margin-top: 20px; display: flex; flex-direction: column;">
+            <button class="btn" id="btn-start">Iniciar</button>
+            <button class="btn btn-pause" id="btn-pause">Pausar</button>
+            <button class="btn btn-reset" id="btn-reset">Reiniciar</button>
+            <button class="btn btn-bump" id="btn-bump">+ Añadir Bache</button>
+        </div>
+        <div style="margin-top: 20px;">
+            <button class="btn" id="btn-camera" style="width: 100%; font-size: 14px; background-color: #50c878; color: #111; font-weight: bold;">📷 Activar Cámara (Gestos)</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ==========================================
+// 1. CARGA DE RECURSOS (Imágenes)
+// ==========================================
+const imgBody = new Image();
+imgBody.src = 'car_body.png';
+let bodyLoaded = false;
+imgBody.onload = () => bodyLoaded = true;
+
+const imgWheel = new Image();
+imgWheel.src = 'car_wheel.png';
+let wheelLoaded = false;
+imgWheel.onload = () => wheelLoaded = true;
+imgWheel.onerror = () => { if (imgWheel.src.includes('car_wheel.png')) imgWheel.src = 'wheel.png'; };
+
+// ==========================================
+// 2. FÍSICA Y SIMULACIÓN
+// ==========================================
+class OscillationGraph {
+    constructor(rect) {
+        this.rect = rect; // {x, y, w, h}
+        this.points = [];
+    }
+
+    addPoint(t, y) {
+        this.points.push({t, y});
+        if (this.points.length > 400) {
+            this.points = this.points.slice(-300); // Mantener memoria baja
+        }
+    }
+
+    draw(ctx) {
+        // Fondo
+        ctx.fillStyle = '#141419';
+        ctx.fillRect(this.rect.x, this.rect.y, this.rect.w, this.rect.h);
+        ctx.strokeStyle = '#646464';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(this.rect.x, this.rect.y, this.rect.w, this.rect.h);
+
+        const y0_px = this.rect.y + this.rect.h / 2;
+        
+        // Línea central (0)
+        ctx.beginPath();
+        ctx.moveTo(this.rect.x, y0_px);
+        ctx.lineTo(this.rect.x + this.rect.w, y0_px);
+        ctx.strokeStyle = '#505050';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        if (this.points.length < 2) return;
+
+        const max_t = this.points[this.points.length - 1].t;
+        const window_sec = 5.0;
+        const min_t = Math.max(0.0, max_t - window_sec);
+
+        // Filtrar puntos visibles
+        const viewPoints = this.points.filter(p => p.t >= min_t);
+        if (viewPoints.length < 2) return;
+
+        // Amplitud máxima visible para escalar
+        let max_abs_y = 0.1;
+        for (let p of viewPoints) {
+            if (Math.abs(p.y) > max_abs_y) max_abs_y = Math.abs(p.y);
+        }
+        max_abs_y *= 1.5;
+
+        // Calcular coordenadas en pantalla
+        const screenPoints = viewPoints.map(p => {
+            const px = this.rect.x + ((p.t - min_t) / window_sec) * this.rect.w;
+            const py = this.rect.y + this.rect.h / 2 - (p.y / max_abs_y) * (this.rect.h / 2);
+            return {px, py};
+        });
+
+        // Área bajo la curva
+        ctx.beginPath();
+        ctx.moveTo(screenPoints[0].px, y0_px);
+        for (let p of screenPoints) ctx.lineTo(p.px, p.py);
+        ctx.lineTo(screenPoints[screenPoints.length - 1].px, y0_px);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(0, 150, 255, 0.25)';
+        ctx.fill();
+
+        // Línea de señal
+        ctx.beginPath();
+        ctx.moveTo(screenPoints[0].px, screenPoints[0].py);
+        for (let i = 1; i < screenPoints.length; i++) {
+            ctx.lineTo(screenPoints[i].px, screenPoints[i].py);
+        }
+        ctx.strokeStyle = '#00c8ff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Etiquetas
+        ctx.fillStyle = '#b4b4b4';
+        ctx.font = '12px Arial';
+        ctx.fillText(`${max_abs_y.toFixed(2)} m`, this.rect.x + 5, this.rect.y + 15);
+        ctx.fillText(`${(-max_abs_y).toFixed(2)} m`, this.rect.x + 5, this.rect.y + this.rect.h - 5);
+        ctx.fillText('0 m', this.rect.x + 5, y0_px - 5);
+        
+        ctx.fillText(`${min_t.toFixed(1)} s`, this.rect.x + 5, y0_px + 15);
+        ctx.fillText(`${(min_t + window_sec).toFixed(1)} s`, this.rect.x + this.rect.w - 35, y0_px + 15);
+    }
+}
+
+class CarSimulation {
+    constructor(graph) {
+        this.graph = graph;
+        
+        // Parámetros
+        this.m = 1000.0;
+        this.k = 20000.0;
+        this.c = 1500.0;
+        this.h = 0.1;
+        this.v_kmh = 30.0;
+        this.L = 2.0;
+        
+        this.wheel_dist = 1.325;
+        this.body_offset_x = -5.25;
+        this.body_offset_y = 30;
+        
+        this.running = false;
+        this.reset();
+    }
+
+    reset() {
+        this.time = 0.0;
+        this.car_x = 0.0;
+        this.y = 0.0;
+        this.v_y = 0.0;
+        this.prev_road = 0.0;
+        this.bumps = [5.0];
+        this.graph.points = [];
+    }
+
+    addBump() {
+        const last_x = Math.max(...this.bumps, this.car_x);
+        const new_x = Math.max(last_x + 3.0, this.car_x + 5.0);
+        this.bumps.push(new_x);
+    }
+
+    getRoadY(x) {
+        let total_y = 0.0;
+        for (let bx of this.bumps) {
+            if (x >= bx && x <= bx + this.L) {
+                total_y += this.h * Math.sin(Math.PI * (x - bx) / this.L);
+            }
+        }
+        return total_y;
+    }
+
+    updatePhysics(dt) {
+        if (!this.running) return;
+        
+        const velocity = this.v_kmh / 3.6; // m/s
+        this.car_x += velocity * dt;
+        this.time += dt;
+        
+        const road_f = this.getRoadY(this.car_x + this.wheel_dist);
+        const road_r = this.getRoadY(this.car_x - this.wheel_dist);
+        const road = (road_f + road_r) / 2.0;
+        
+        const road_vel = (this.time > dt) ? (road - this.prev_road) / dt : 0.0;
+        
+        // Ecuación diferencial 1-DOF
+        const accel = (-this.k * (this.y - road) - this.c * (this.v_y - road_vel)) / this.m;
+        
+        this.v_y += accel * dt;
+        this.y += this.v_y * dt;
+        
+        this.prev_road = road;
+        this.graph.addPoint(this.time, this.y);
+    }
+
+    draw(ctx, canvasW, canvasH) {
+        // Cielo
+        ctx.fillStyle = '#87CEEB';
+        ctx.fillRect(0, 0, canvasW, canvasH);
+        
+        // Nubes
+        const cloudSpeed = 0.1;
+        const velocity = this.v_kmh / 3.6;
+        const scaleX = 50;
+        
+        ctx.fillStyle = '#FFFFFF';
+        const clouds = [[100, 80], [400, 50], [700, 100], [250, 120]];
+        for (let [cx, cy] of clouds) {
+            let shiftedX = cx - (this.time * velocity * cloudSpeed * scaleX);
+            // Módulo en JS con números negativos requiere truco
+            shiftedX = ((shiftedX + 50) % (canvasW + 100) + (canvasW + 100)) % (canvasW + 100) - 50;
+            
+            ctx.beginPath(); ctx.arc(shiftedX, cy, 30, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(shiftedX + 25, cy - 15, 40, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(shiftedX + 50, cy, 30, 0, Math.PI*2); ctx.fill();
+        }
+
+        const baseY = 350;
+        const scaleY = 200; // px por metro
+        const carScreenX = 200;
+
+        // Asfalto
+        ctx.beginPath();
+        ctx.moveTo(0, canvasH);
+        let roadPoints = [];
+        for (let px = 0; px <= canvasW; px += 4) {
+            let physX = this.car_x + (px - carScreenX) / scaleX;
+            let rY = this.getRoadY(physX);
+            let py = baseY - rY * scaleY;
+            ctx.lineTo(px, py);
+            roadPoints.push({x: px, y: py});
+        }
+        ctx.lineTo(canvasW, canvasH);
+        ctx.closePath();
+        ctx.fillStyle = '#323232';
+        ctx.fill();
+
+        // Línea de la carretera
+        ctx.beginPath();
+        ctx.moveTo(roadPoints[0].x, roadPoints[0].y);
+        for (let i=1; i<roadPoints.length; i++) ctx.lineTo(roadPoints[i].x, roadPoints[i].y);
+        ctx.strokeStyle = '#c8c8c8';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Cálculos ruedas y chasis
+        const fwPhysX = this.car_x + this.wheel_dist;
+        const rwPhysX = this.car_x - this.wheel_dist;
+        
+        const fwPx = carScreenX + this.wheel_dist * scaleX;
+        const rwPx = carScreenX - this.wheel_dist * scaleX;
+        
+        const fwPy = baseY - this.getRoadY(fwPhysX) * scaleY - 20;
+        const rwPy = baseY - this.getRoadY(rwPhysX) * scaleY - 20;
+        
+        const bodyY = baseY - this.y * scaleY - 70;
+        
+        const dy = rwPy - fwPy;
+        const dx = fwPx - rwPx;
+        const angleRad = Math.atan2(dy, dx);
+        
+        const fwBodyY = bodyY - (dy / 2.0);
+        const rwBodyY = bodyY + (dy / 2.0);
+
+        // Resortes visuales
+        ctx.strokeStyle = '#1e1e1e';
+        ctx.lineWidth = 5;
+        if (fwPy > fwBodyY + 35) {
+            ctx.beginPath(); ctx.moveTo(fwPx, fwBodyY + 35); ctx.lineTo(fwPx, fwPy); ctx.stroke();
+        }
+        if (rwPy > rwBodyY + 35) {
+            ctx.beginPath(); ctx.moveTo(rwPx, rwBodyY + 35); ctx.lineTo(rwPx, rwPy); ctx.stroke();
+        }
+
+        // Llantas
+        const wheelRadiusM = 20 / scaleY;
+        const spinAngle = (wheelRadiusM > 0) ? (this.car_x / wheelRadiusM) : 0;
+
+        const drawWheel = (x, y, angle) => {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle); // Girar visualmente por velocidad
+            if (wheelLoaded) {
+                ctx.drawImage(imgWheel, -24, -24, 48, 48); // scale_wheel = 48x48 en Pygame
+            } else {
+                ctx.fillStyle = '#1e1e1e';
+                ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#969696';
+                ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
+                ctx.strokeStyle = '#c8c8c8'; ctx.lineWidth = 3;
+                for (let i=0; i<5; i++) {
+                    let theta = i * (2 * Math.PI / 5);
+                    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(theta)*20, Math.sin(theta)*20); ctx.stroke();
+                }
+            }
+            ctx.restore();
+        };
+
+        drawWheel(fwPx, fwPy, spinAngle);
+        drawWheel(rwPx, rwPy, spinAngle);
+
+        // Chasis
+        ctx.save();
+        const wheelsMidX = (fwPx + rwPx) / 2.0;
+        const bodyCx = wheelsMidX + this.body_offset_x;
+        const bodyCy = bodyY + this.body_offset_y;
+        
+        ctx.translate(bodyCx, bodyCy);
+        ctx.rotate(-angleRad); // Canvas rotation es horario
+        
+        if (bodyLoaded) {
+            // car_body fue reescalado a ancho=230 en python
+            const aspect = imgBody.height / imgBody.width;
+            const targetW = 230;
+            const targetH = targetW * aspect;
+            // Dibujar imagen volteada horizontalmente si es necesario (pygame hizo flip en X)
+            ctx.scale(-1, 1);
+            ctx.drawImage(imgBody, -targetW/2, -targetH/2, targetW, targetH);
+        } else {
+            ctx.fillStyle = '#c83232';
+            ctx.fillRect(-60, -20, 120, 40);
+            ctx.fillRect(-30, -50, 60, 30);
+        }
+        ctx.restore();
+    }
+}
+
+// ==========================================
+// 3. UI Y BUCLE PRINCIPAL
+// ==========================================
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const graph = new OscillationGraph({x: 0, y: 500, w: 950, h: 220});
+const sim = new CarSimulation(graph);
+
+// Sliders y UI
+const sliders = {
+    m: document.getElementById('slider-m'),
+    k: document.getElementById('slider-k'),
+    c: document.getElementById('slider-c'),
+    h: document.getElementById('slider-h'),
+    v: document.getElementById('slider-v')
+};
+const labels = {
+    m: document.getElementById('lbl-m'),
+    k: document.getElementById('lbl-k'),
+    c: document.getElementById('lbl-c'),
+    h: document.getElementById('lbl-h'),
+    v: document.getElementById('lbl-v')
+};
+
+const updateUIFromSim = () => {
+    sliders.m.value = sim.m; labels.m.innerText = `Masa: ${Math.round(sim.m)} kg`;
+    sliders.k.value = sim.k; labels.k.innerText = `Resorte (k): ${Math.round(sim.k)} N/m`;
+    sliders.c.value = sim.c; labels.c.innerText = `Amortig. (c): ${Math.round(sim.c)} N·s/m`;
+    sliders.h.value = sim.h * 100; labels.h.innerText = `Prof. Bache: ${(sim.h * 100).toFixed(1)} cm`;
+    sliders.v.value = sim.v_kmh; labels.v.innerText = `Velocidad: ${Math.round(sim.v_kmh)} km/h`;
+};
+
+const updateSimFromUI = () => {
+    sim.m = parseFloat(sliders.m.value);
+    sim.k = parseFloat(sliders.k.value);
+    sim.c = parseFloat(sliders.c.value);
+    sim.h = parseFloat(sliders.h.value) / 100.0;
+    sim.v_kmh = parseFloat(sliders.v.value);
+    updateUIFromSim();
+};
+
+for (let key in sliders) {
+    sliders[key].addEventListener('input', updateSimFromUI);
+}
+
+document.getElementById('btn-start').addEventListener('click', () => sim.running = true);
+document.getElementById('btn-pause').addEventListener('click', () => sim.running = false);
+document.getElementById('btn-reset').addEventListener('click', () => {
+    sim.reset();
+    sim.running = true;
+});
+document.getElementById('btn-bump').addEventListener('click', () => sim.addBump());
+
+let lastTime = performance.now();
+function gameLoop(time) {
+    const dt = (time - lastTime) / 1000;
+    lastTime = time;
+
+    // Fixed timestep 0.016s para física como en python
+    if (dt > 0 && dt < 0.1) {
+        sim.updatePhysics(0.016); 
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    sim.draw(ctx, canvas.width, canvas.height);
+    graph.draw(ctx);
+
+    requestAnimationFrame(gameLoop);
+}
+
+// Iniciar estado
+updateUIFromSim();
+requestAnimationFrame(gameLoop);
+
+
+// ==========================================
+// 4. CONTROLADOR DE GESTOS (MediaPipe)
+// ==========================================
+const videoElement = document.getElementById('input_video');
+const gestureCanvas = document.getElementById('gesture-canvas');
+const gCtx = gestureCanvas.getContext('2d');
+let camera = null;
+let hands = null;
+let gesturesActive = false;
+
+// Estado del Gesto
+let activeParamId = null; // 'c', 'k', 'm', 'v', 'h'
+let rightYHistory = [];
+let lastFistState = false;
+
+const fingerTips = [8, 12, 16, 20];
+const fingerPips = [6, 10, 14, 18];
+const thumbTip = 4;
+const thumbIp = 3;
+
+function countFingers(landmarks, isRightHand) {
+    let count = 0;
+    // Pulgar (espejado por cámara)
+    // isRightHand del modelo (visto de frente) = Mano izquierda real si no está en espejo.
+    // Usamos heurísticas simples en X
+    if (isRightHand) {
+        if (landmarks[thumbTip].x < landmarks[thumbIp].x) count++;
+    } else {
+        if (landmarks[thumbTip].x > landmarks[thumbIp].x) count++;
+    }
+    for (let i = 0; i < 4; i++) {
+        if (landmarks[fingerTips[i]].y < landmarks[fingerPips[i]].y) count++;
+    }
+    return count;
+}
+
+function getCenterY(landmarks) {
+    let sum = 0;
+    [0, 5, 9, 13, 17].forEach(i => sum += landmarks[i].y);
+    return sum / 5;
+}
+
+function highlightGroup(param) {
+    ['m', 'k', 'c', 'h', 'v'].forEach(p => {
+        document.getElementById(`group-${p}`).classList.remove('slider-active');
+    });
+    if (param) document.getElementById(`group-${param}`).classList.add('slider-active');
+}
+
+function onResults(results) {
+    gCtx.save();
+    gCtx.clearRect(0, 0, gestureCanvas.width, gestureCanvas.height);
+    // Dibujar video de fondo
+    gCtx.drawImage(results.image, 0, 0, gestureCanvas.width, gestureCanvas.height);
+
+    let leftLm = null;
+    let rightLm = null;
+
+    if (results.multiHandLandmarks && results.multiHandedness) {
+        for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+            const marks = results.multiHandLandmarks[i];
+            const label = results.multiHandedness[i].label; // "Left" o "Right"
+            
+            // MediaPipe devuelve labels como si estuvieras viendo a otra persona.
+            // Con selfie-mode, "Right" de MP es tu mano izquierda en la pantalla.
+            if (label === 'Left') rightLm = marks; // Invertido
+            else leftLm = marks;
+
+            drawConnectors(gCtx, marks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+            drawLandmarks(gCtx, marks, {color: '#FF0000', lineWidth: 1, radius: 2});
+        }
+    }
+    gCtx.restore();
+
+    // Lógica
+    let lf = 0, rf = 0;
+    let newParam = null;
+    let actionTxt = "";
+
+    // Mano izquierda -> Selecciona param
+    if (leftLm) {
+        lf = countFingers(leftLm, false);
+        const map = {1: 'c', 2: 'k', 3: 'm', 4: 'v', 5: 'h'};
+        newParam = map[lf] || null;
+    }
+    
+    activeParamId = newParam;
+    highlightGroup(activeParamId);
+
+    // Mano derecha -> Ajustar valor o bache
+    if (rightLm) {
+        rf = countFingers(rightLm, true);
+        let isFist = (rf === 0);
+
+        if (isFist) {
+            actionTxt = "👊 BACHE!";
+            if (!lastFistState) {
+                sim.addBump(); // Evento OnFistDown
+            }
+            rightYHistory = [];
+        } else {
+            let cy = getCenterY(rightLm);
+            rightYHistory.push(cy);
+            if (rightYHistory.length > 6) rightYHistory.shift();
+            
+            if (rightYHistory.length >= 2 && activeParamId) {
+                let recent = (rightYHistory[rightYHistory.length-1] + rightYHistory[rightYHistory.length-2]) / 2;
+                let old = (rightYHistory[0] + rightYHistory[1]) / 2;
+                let delta = (old - recent) * 18.0; // Sensibilidad
+                
+                // Limitar
+                if (delta > 1.0) delta = 1.0;
+                if (delta < -1.0) delta = -1.0;
+
+                if (Math.abs(delta) > 0.05) {
+                    actionTxt = delta > 0 ? "▲ Subiendo" : "▼ Bajando";
+                    
+                    // Modificar slider
+                    const SPEED = 0.012; // 1.2% por frame
+                    let s = sliders[activeParamId];
+                    let min = parseFloat(s.min);
+                    let max = parseFloat(s.max);
+                    let span = max - min;
+                    let cur = parseFloat(s.value);
+                    
+                    let nextVal = cur + (delta * span * SPEED);
+                    nextVal = Math.max(min, Math.min(max, nextVal));
+                    s.value = nextVal;
+                    
+                    // Disparar evento de input para sincronizar
+                    s.dispatchEvent(new Event('input'));
+                }
+            }
+        }
+        lastFistState = isFist;
+    } else {
+        rightYHistory = [];
+        lastFistState = false;
+    }
+
+    // Actualizar HUD Texto
+    document.getElementById('txt-left').innerText = `IZQ: ${lf} dedos`;
+    document.getElementById('txt-right').innerText = `DER: ${rf} dedos`;
+    
+    const paramNames = {'c': 'Amortiguador (c)', 'k': 'Resorte (k)', 'm': 'Masa (m)', 'v': 'Velocidad', 'h': 'Prof. Bache'};
+    document.getElementById('txt-param').innerText = activeParamId ? `Select: ${paramNames[activeParamId]}` : `Select: Ninguna`;
+    document.getElementById('txt-action').innerText = actionTxt;
+}
+
+// Inicializar Cámara al hacer click
+document.getElementById('btn-camera').addEventListener('click', async (e) => {
+    const btn = e.target;
+    if (gesturesActive) return; // Ya activo
+    
+    btn.innerText = "⏳ Cargando Modelos AI...";
+    btn.disabled = true;
+
+    try {
+        hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+        
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.65,
+            minTrackingConfidence: 0.55
+        });
+        
+        hands.onResults(onResults);
+
+        camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 320,
+            height: 180
+        });
+
+        await camera.start();
+        gesturesActive = true;
+        btn.innerText = "✅ Cámara Activa";
+        btn.style.backgroundColor = "#2e7d32";
+        btn.style.color = "#fff";
+    } catch (err) {
+        console.error(err);
+        btn.innerText = "❌ Error con Cámara";
+        btn.style.backgroundColor = "#c62828";
+        alert("Asegúrate de dar permisos de cámara al navegador y ejecutar desde un servidor HTTP local.");
+    }
+});
+
+</script>
+</body>
+</html>
