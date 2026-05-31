@@ -1,0 +1,9 @@
+{
+  "wheel_dist": 1.325,
+  "body_offset_x": -5.25,
+  "body_offset_y": 30,
+  "fw_offset_x": -9.0,
+  "fw_offset_y": 0.0,
+  "rw_offset_x": -9.0,
+  "rw_offset_y": 0.0
+}
