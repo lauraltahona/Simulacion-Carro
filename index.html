@@ -3,485 +3,687 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simulación de Suspensión (Masa-Resorte-Amortiguador) + Gestos</title>
-    
-    <!-- MediaPipe -->
+    <title>SuspensionSIM</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: #1a1a1a;
-            color: #fff;
-            font-family: 'Arial', sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-deep:     #0c0a0e;
+            --bg-panel:    #13101a;
+            --bg-card:     #1a1525;
+            --bg-inset:    #0f0c15;
+            --accent:      #e8652a;
+            --accent-soft: #c94e18;
+            --accent-glow: #e8652a28;
+            --amber:       #f0a045;
+            --amber-dim:   #7a4a10;
+            --rose:        #e05070;
+            --purple:      #8b5cf6;
+            --purple-dim:  #3b1f6e;
+            --border:      #221a30;
+            --border-hi:   #2e2040;
+            --text-pri:    #f0eaf8;
+            --text-sec:    #8a7aaa;
+            --text-dim:    #4a3a5a;
+            --font-main:   'Outfit', sans-serif;
+            --font-mono:   'JetBrains Mono', monospace;
+        }
+
+        html.light-mode {
+            --bg-deep:     #e6fcf5;
+            --bg-panel:    #f0fdf4;
+            --bg-card:     #d1fae5;
+            --bg-inset:    #a7f3d0;
+            --accent:      #10b981;
+            --accent-soft: #059669;
+            --accent-glow: #10b98166;
+            --amber:       #ea580c;
+            --amber-dim:   #ffedd5;
+            --rose:        #e11d48;
+            --purple:      #0f766e;
+            --purple-dim:  #ccfbf1;
+            --border:      #6ee7b7;
+            --border-hi:   #10b981;
+            --text-pri:    #064e3b;
+            --text-sec:    #047857;
+            --text-dim:    #059669;
+        }
+
+        html, body {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background: var(--bg-deep);
+            color: var(--text-pri);
+            font-family: var(--font-main);
+        }
+
+        #app {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            grid-template-rows: 48px 1fr;
+            width: 100vw;
             height: 100vh;
+        }
+
+        /* ── TOPBAR ── */
+        #topbar {
+            grid-column: 1 / 3;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 22px;
+            gap: 20px;
+        }
+
+        .logo {
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            color: var(--accent);
+        }
+        .logo span { color: var(--text-sec); font-weight: 300; }
+
+        .tsep { width: 1px; height: 18px; background: var(--border-hi); }
+
+        .tstat { display: flex; flex-direction: column; gap: 1px; }
+        .tstat .tl {
+            font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+            color: var(--text-dim); font-family: var(--font-mono);
+        }
+        .tstat .tv {
+            font-size: 14px; font-weight: 500;
+            color: var(--amber); font-family: var(--font-mono); line-height: 1;
+        }
+
+        #status-wrap { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+        #status-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: var(--text-dim); transition: background 0.3s;
+        }
+        #status-dot.running { background: #5dde9a; box-shadow: 0 0 8px #5dde9a88; }
+        #status-label {
+            font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
+            color: var(--text-dim); font-family: var(--font-mono);
+        }
+
+        /* ── MAIN AREA (left) ── */
+        #main-left {
+            grid-column: 1;
+            grid-row: 2;
+            display: grid;
+            grid-template-rows: 1fr 1fr;
             overflow: hidden;
         }
 
-        #app-container {
-            display: flex;
-            width: 1280px;
-            height: 720px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        /* Canvas */
+        #canvas-wrap {
             position: relative;
+            overflow: hidden;
+            background: #1a0a05;
         }
 
-        canvas {
-            display: block;
-            background-color: #87CEEB; /* Cielo base */
+        #gameCanvas { display: block; width: 100%; height: 100%; }
+
+        .corner {
+            position: absolute; width: 18px; height: 18px;
+            pointer-events: none; z-index: 5;
+        }
+        .corner::before, .corner::after {
+            content: ''; position: absolute; background: var(--accent); opacity: 0.6;
+        }
+        .corner.tl { top: 10px; left: 10px; }
+        .corner.tl::before { width: 2px; height: 100%; top: 0; left: 0; }
+        .corner.tl::after  { width: 100%; height: 2px; top: 0; left: 0; }
+        .corner.tr { top: 10px; right: 10px; }
+        .corner.tr::before { width: 2px; height: 100%; top: 0; right: 0; }
+        .corner.tr::after  { width: 100%; height: 2px; top: 0; right: 0; }
+        .corner.bl { bottom: 10px; left: 10px; }
+        .corner.bl::before { width: 2px; height: 100%; bottom: 0; left: 0; }
+        .corner.bl::after  { width: 100%; height: 2px; bottom: 0; left: 0; }
+        .corner.br { bottom: 10px; right: 10px; }
+        .corner.br::before { width: 2px; height: 100%; bottom: 0; right: 0; }
+        .corner.br::after  { width: 100%; height: 2px; bottom: 0; right: 0; }
+
+        /* Graph */
+        #graph-wrap {
+            position: relative;
+            border-top: 1px solid var(--border);
+            background: var(--bg-inset);
+            overflow: hidden;
         }
 
-        #control-panel {
-            width: 330px;
-            background-color: #28282d;
-            border-left: 2px solid #646464;
-            padding: 20px;
-            box-sizing: border-box;
+        #graph-label {
+            position: absolute; top: 10px; left: 16px; z-index: 2;
+            font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+            color: var(--text-dim); font-family: var(--font-mono);
+        }
+
+        #graphCanvas { display: block; width: 100%; height: 100%; }
+
+        /* ── RIGHT PANEL ── */
+        #panel {
+            grid-column: 2;
+            grid-row: 2;
+            background: var(--bg-panel);
+            border-left: 1px solid var(--border);
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            overflow: hidden;
         }
 
-        .control-group {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-
-        .control-group label {
-            font-size: 14px;
-            color: #ccc;
-            font-weight: bold;
-        }
-
-        .control-group input[type="range"] {
-            width: 100%;
-        }
-
-        .btn {
-            background-color: #4CAF50;
-            border: none;
-            color: white;
-            padding: 10px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 16px;
-            margin: 4px 2px;
-            cursor: pointer;
-            border-radius: 4px;
-            transition: background-color 0.3s;
-        }
-
-        .btn:hover { background-color: #45a049; }
-        .btn-pause { background-color: #f44336; }
-        .btn-pause:hover { background-color: #da190b; }
-        .btn-reset { background-color: #008CBA; }
-        .btn-reset:hover { background-color: #007399; }
-        .btn-bump { background-color: #ff9800; font-weight: bold; }
-        .btn-bump:hover { background-color: #e68a00; }
-
-        /* HUD de Gestos (sobre el canvas) */
-        #gesture-hud {
+        /* Camera floating over canvas */
+        #cam-section {
             position: absolute;
-            bottom: 10px;
-            right: 340px; /* Al lado del panel de control */
-            width: 320px;
-            height: 240px;
-            background-color: rgba(30, 35, 45, 0.9);
-            border: 2px solid #50c878;
+            top: 16px; right: 16px; /* Modifica 'top' y 'right' para cambiar la posición */
+            width: 320px; /* Modifica 'width' para hacer la cámara más grande o más pequeña */
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
             border-radius: 8px;
             overflow: hidden;
-            display: flex;
-            flex-direction: column;
+            z-index: 10;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+            flex-shrink: 0;
+            transition: opacity 0.3s;
+        }
+        
+        html.light-mode #cam-section {
+            border: 3px solid var(--accent);
+            box-shadow: 0 4px 20px var(--accent-glow);
+        }
+
+        #cam-header {
+            padding: 8px 14px;
+            display: flex; align-items: center; justify-content: space-between;
+            background: var(--bg-inset);
+            border-bottom: 1px solid var(--border);
+        }
+
+        #cam-header .ch-title {
+            font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+            color: var(--text-dim); font-family: var(--font-mono);
+        }
+
+        #cam-header .cam-badge {
+            font-size: 9px; padding: 2px 8px; letter-spacing: 1px;
+            background: var(--purple-dim); color: var(--purple);
+            font-family: var(--font-mono);
         }
 
         #gesture-video-container {
-            position: relative;
-            flex-grow: 1;
-            background: #000;
+            position: relative; width: 100%; height: 180px; background: #000; /* Ajusta el 'height' para mantener la proporción si cambias el ancho */
         }
 
-        #gesture-video-container video {
-            display: none; /* Oculto, procesado por MediaPipe */
-        }
-        
+        #gesture-video-container video { display: none; }
+
         #gesture-canvas {
-            width: 100%;
-            height: 100%;
-            position: absolute;
-            top: 0; left: 0;
-            transform: scaleX(-1); /* Espejo */
+            width: 100%; height: 100%;
+            position: absolute; top: 0; left: 0;
+            transform: scaleX(-1);
         }
 
         #gesture-status {
-            background: rgba(15, 18, 28, 0.9);
-            padding: 8px;
-            font-size: 12px;
-            border-top: 1px solid #444;
-            color: #ccc;
+            padding: 6px 10px;
+            display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center;
+            font-family: var(--font-mono); font-size: 10px;
+            background: var(--bg-card);
         }
 
-        .status-line {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 4px;
+        #txt-param { color: var(--amber); font-weight: 500; }
+        #txt-left, #txt-right { color: var(--text-sec); font-size: 10px; }
+        #txt-action { color: var(--accent); font-size: 10px; margin-left: auto; }
+
+        #btn-camera {
+            width: 100%; padding: 9px;
+            background: transparent;
+            border: none; border-top: 1px solid var(--border);
+            color: var(--purple);
+            font-family: var(--font-main); font-size: 13px; font-weight: 500;
+            letter-spacing: 0.5px; cursor: pointer; transition: all 0.2s;
+        }
+        #btn-camera:hover { background: var(--purple-dim); color: #c4a8ff; }
+
+        /* Scrollable params area */
+        #params-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 14px 8px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-hi) transparent;
         }
 
-        .param-active {
-            color: #00ffcc;
-            font-weight: bold;
+        .section-title {
+            font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+            color: var(--text-dim); font-family: var(--font-mono);
+            margin-bottom: 12px;
         }
 
-        /* Indicador visual de qué slider está siendo controlado por gestos */
-        .slider-active {
-            border: 2px solid #00ffcc;
-            padding: 5px;
-            border-radius: 5px;
-            background-color: rgba(0, 255, 204, 0.1);
+        .param-row {
+            margin-bottom: 14px;
+            padding: 8px 10px;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        .param-row.active {
+            border-color: var(--purple-dim);
+            background: rgba(139, 92, 246, 0.05);
+        }
+
+        .param-header {
+            display: flex; justify-content: space-between; align-items: baseline;
+            margin-bottom: 6px;
+        }
+
+        .param-name {
+            font-size: 13px; font-weight: 500; color: var(--text-sec);
+        }
+
+        .param-val {
+            font-size: 15px; font-family: var(--font-mono); color: var(--text-pri);
+        }
+        .param-unit { font-size: 10px; color: var(--text-dim); margin-left: 2px; }
+
+        input[type="range"] {
+            -webkit-appearance: none; appearance: none;
+            width: 100%; height: 3px;
+            background: var(--border-hi); outline: none; border-radius: 2px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 14px; height: 14px;
+            background: var(--accent); border-radius: 50%; cursor: pointer;
+            border: 2px solid var(--bg-panel);
+            box-shadow: 0 0 6px var(--accent-glow);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 14px; height: 14px; background: var(--accent);
+            border-radius: 50%; cursor: pointer; border: 2px solid var(--bg-panel);
+        }
+
+        /* Buttons */
+        .ctrl-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+            padding: 0 14px 14px;
+        }
+
+        .hbtn {
+            background: var(--bg-card); border: 1px solid var(--border-hi);
+            color: var(--text-sec); font-family: var(--font-main);
+            font-size: 13px; font-weight: 500;
+            padding: 10px 6px; cursor: pointer;
+            border-radius: 6px; transition: all 0.15s;
+        }
+        .hbtn:hover { background: var(--bg-inset); color: var(--text-pri); border-color: var(--border-hi); }
+
+        .hbtn.primary {
+            background: var(--accent); border-color: var(--accent); color: #fff;
+        }
+        .hbtn.primary:hover { background: var(--accent-soft); }
+
+        .hbtn.outline-accent { border-color: #5a2810; color: var(--accent); }
+        .hbtn.outline-accent:hover { background: var(--accent-glow); border-color: var(--accent); }
+
+        .hbtn.full { grid-column: 1 / 3; }
+
+        /* Metrics strip */
+        .metrics {
+            display: grid; grid-template-columns: 1fr 1fr 1fr 1fr;
+            border-top: 1px solid var(--border);
+        }
+
+        .mc {
+            padding: 10px 6px; text-align: center;
+            border-right: 1px solid var(--border);
+        }
+        .mc:last-child { border-right: none; }
+
+        .mc-l {
+            font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase;
+            color: var(--text-dim); font-family: var(--font-mono);
+            display: block; margin-bottom: 3px;
+        }
+        .mc-v {
+            font-size: 13px; font-family: var(--font-mono);
+            color: var(--amber); display: block; font-weight: 400;
         }
     </style>
 </head>
 <body>
+<div id="app">
 
-<div id="app-container">
-    <!-- Simulación principal (950x720) -->
-    <canvas id="gameCanvas" width="950" height="720"></canvas>
-    
-    <!-- HUD Gestos -->
-    <div id="gesture-hud">
-        <div id="gesture-video-container">
-            <video id="input_video"></video>
-            <canvas id="gesture-canvas" width="320" height="180"></canvas>
+    <div id="topbar">
+        <div class="logo">Suspension<span>SIM</span></div>
+        <div class="tsep"></div>
+        <div class="tstat"><span class="tl">Estado</span><span class="tv" id="hud-state" style="color: var(--amber);">Subamortiguado</span></div>
+        <div class="tsep"></div>
+        <div class="tstat"><span class="tl">dt</span><span class="tv">16ms</span></div>
+        <div class="tsep"></div>
+        <div class="tstat"><span class="tl">Tiempo</span><span class="tv" id="hud-time">0.00 s</span></div>
+        <div class="tsep"></div>
+        <div class="tstat"><span class="tl">Pos. Y</span><span class="tv" id="hud-y">0.000 m</span></div>
+        <div id="status-wrap">
+            <div id="status-dot"></div>
+            <span id="status-label">detenido</span>
         </div>
-        <div id="gesture-status">
-            <div class="status-line">
-                <span id="txt-left">IZQ: 0 dedos</span>
-                <span id="txt-right">DER: 0 dedos</span>
+        <button id="btn-theme" class="hbtn outline-accent" style="margin-left: 10px; padding: 4px 8px; font-size: 11px;">☀️ Día</button>
+    </div>
+
+    <div id="main-left">
+        <div id="canvas-wrap">
+            <div class="corner tl"></div><div class="corner tr"></div>
+            <div class="corner bl"></div><div class="corner br"></div>
+            <canvas id="gameCanvas"></canvas>
+
+            <div id="alert-sobre" style="display: none; position: absolute; bottom: 20px; right: 20px; background: rgba(224, 80, 112, 0.9); color: white; padding: 10px 16px; border-radius: 6px; font-weight: 500; font-size: 13px; z-index: 20; box-shadow: 0 4px 12px rgba(0,0,0,0.4); border: 1px solid #ff7a9a;">¡El sistema está sobreamortiguado!</div>
+            
+            <!-- Camera floating -->
+            <div id="cam-section">
+                <div id="cam-header">
+                    <span class="ch-title">Gesture Control</span>
+                    <span class="cam-badge">CAM</span>
+                </div>
+                <div id="gesture-video-container">
+                    <video id="input_video"></video>
+                    <canvas id="gesture-canvas" width="320" height="180"></canvas>
+                </div>
+                <div id="gesture-status">
+                    <span id="txt-param">— sin selección</span>
+                    <span id="txt-left">IZQ: 0</span>
+                    <span id="txt-right">DER: 0</span>
+                    <span id="txt-action"></span>
+                </div>
+                <button id="btn-camera">Activar cámara</button>
             </div>
-            <div class="status-line">
-                <span id="txt-param" class="param-active">Selección: Ninguna</span>
-                <span id="txt-action"></span>
-            </div>
-            <div style="font-size: 10px; color: #888; margin-top: 4px;">IZQ: 1=c, 2=k, 3=m, 4=v, 5=h | DER: ▲/▼=Ajustar, 👊=Bache</div>
+        </div>
+        <div id="graph-wrap">
+            <span id="graph-label">Oscilación vertical — desplazamiento (m)</span>
+            <canvas id="graphCanvas"></canvas>
         </div>
     </div>
 
-    <!-- Panel de Control (330x720) -->
-    <div id="control-panel">
-        <h2 style="margin-top: 0; font-size: 18px; border-bottom: 1px solid #555; padding-bottom: 10px;">Panel de Control</h2>
-        
-        <div class="control-group" id="group-m">
-            <label id="lbl-m">Masa: 1000 kg</label>
-            <input type="range" id="slider-m" min="500" max="2000" value="1000" step="10">
-        </div>
-        <div class="control-group" id="group-k">
-            <label id="lbl-k">Resorte (k): 20000 N/m</label>
-            <input type="range" id="slider-k" min="5000" max="50000" value="20000" step="100">
-        </div>
-        <div class="control-group" id="group-c">
-            <label id="lbl-c">Amortig. (c): 1500 N·s/m</label>
-            <input type="range" id="slider-c" min="100" max="25000" value="1500" step="50">
-        </div>
-        <div class="control-group" id="group-h">
-            <label id="lbl-h">Prof. Bache: 10 cm</label>
-            <input type="range" id="slider-h" min="2" max="20" value="10" step="0.5">
-        </div>
-        <div class="control-group" id="group-v">
-            <label id="lbl-v">Velocidad: 30 km/h</label>
-            <input type="range" id="slider-v" min="10" max="100" value="30" step="1">
+    <div id="panel">
+        <!-- Params -->
+        <div id="params-area">
+            <div class="section-title">Parámetros dinámicos</div>
+
+            <div class="param-row" id="group-m">
+                <div class="param-header">
+                    <span class="param-name">Masa</span>
+                    <span class="param-val"><span id="lbl-m-val">1000</span><span class="param-unit">kg</span></span>
+                </div>
+                <input type="range" id="slider-m" min="500" max="2000" value="1000" step="10">
+            </div>
+
+            <div class="param-row" id="group-k">
+                <div class="param-header">
+                    <span class="param-name">Resorte k</span>
+                    <span class="param-val"><span id="lbl-k-val">20000</span><span class="param-unit">N/m</span></span>
+                </div>
+                <input type="range" id="slider-k" min="5000" max="50000" value="20000" step="100">
+            </div>
+
+            <div class="param-row" id="group-c">
+                <div class="param-header">
+                    <span class="param-name">Amortiguador c</span>
+                    <span class="param-val"><span id="lbl-c-val">1500</span><span class="param-unit">N·s/m</span></span>
+                </div>
+                <input type="range" id="slider-c" min="100" max="25000" value="1500" step="50">
+            </div>
+
+            <div class="param-row" id="group-h">
+                <div class="param-header">
+                    <span class="param-name">Prof. bache</span>
+                    <span class="param-val"><span id="lbl-h-val">10</span><span class="param-unit">cm</span></span>
+                </div>
+                <input type="range" id="slider-h" min="2" max="20" value="10" step="0.5">
+            </div>
+
+            <div class="param-row" id="group-v">
+                <div class="param-header">
+                    <span class="param-name">Velocidad</span>
+                    <span class="param-val"><span id="lbl-v-val">30</span><span class="param-unit">km/h</span></span>
+                </div>
+                <input type="range" id="slider-v" min="10" max="100" value="30" step="1">
+            </div>
         </div>
 
-        <div style="margin-top: 20px; display: flex; flex-direction: column;">
-            <button class="btn" id="btn-start">Iniciar</button>
-            <button class="btn btn-pause" id="btn-pause">Pausar</button>
-            <button class="btn btn-reset" id="btn-reset">Reiniciar</button>
-            <button class="btn btn-bump" id="btn-bump">+ Añadir Bache</button>
+        <div class="ctrl-grid">
+            <button class="hbtn primary" id="btn-start">▶ Iniciar</button>
+            <button class="hbtn outline-accent" id="btn-pause">⏸ Pausar</button>
+            <button class="hbtn" id="btn-reset">↺ Reset</button>
+            <button class="hbtn outline-accent" id="btn-bump">⬟ Bache</button>
+            <button class="hbtn full outline-accent" id="btn-sub" style="border-color: var(--amber); color: var(--amber);">Subamortiguado</button>
+            <button class="hbtn full outline-accent" id="btn-crit" style="border-color: #5dde9a; color: #5dde9a;">Críticamente amortiguado</button>
+            <button class="hbtn full outline-accent" id="btn-sobre" style="border-color: var(--rose); color: var(--rose);">Sobreamortiguado</button>
         </div>
-        <div style="margin-top: 20px;">
-            <button class="btn" id="btn-camera" style="width: 100%; font-size: 14px; background-color: #50c878; color: #111; font-weight: bold;">📷 Activar Cámara (Gestos)</button>
+
+        <div class="metrics">
+            <div class="mc"><span class="mc-l">Vel Y</span><span class="mc-v" id="mc-vy">0.00</span></div>
+            <div class="mc"><span class="mc-l">Baches</span><span class="mc-v" id="mc-bumps">1</span></div>
+            <div class="mc"><span class="mc-l">ωₙ</span><span class="mc-v" id="mc-wn">4.47</span></div>
+            <div class="mc"><span class="mc-l">ζ</span><span class="mc-v" id="mc-zeta">0.17</span></div>
         </div>
     </div>
+
 </div>
 
 <script>
-// ==========================================
-// 1. CARGA DE RECURSOS (Imágenes)
-// ==========================================
-const imgBody = new Image();
-imgBody.src = 'car_body.png';
-let bodyLoaded = false;
-imgBody.onload = () => bodyLoaded = true;
-
-const imgWheel = new Image();
-imgWheel.src = 'car_wheel.png';
-let wheelLoaded = false;
-imgWheel.onload = () => wheelLoaded = true;
+let isLightMode = false;
+const imgBody = new Image(); imgBody.src = 'car_body.png'; let bodyLoaded = false; imgBody.onload = () => bodyLoaded = true;
+const imgWheel = new Image(); imgWheel.src = 'car_wheel.png'; let wheelLoaded = false; imgWheel.onload = () => wheelLoaded = true;
 imgWheel.onerror = () => { if (imgWheel.src.includes('car_wheel.png')) imgWheel.src = 'wheel.png'; };
 
-// ==========================================
-// 2. FÍSICA Y SIMULACIÓN
-// ==========================================
 class OscillationGraph {
-    constructor(rect) {
-        this.rect = rect; // {x, y, w, h}
-        this.points = [];
-    }
-
+    constructor() { this.points = []; }
     addPoint(t, y) {
         this.points.push({t, y});
-        if (this.points.length > 400) {
-            this.points = this.points.slice(-300); // Mantener memoria baja
-        }
+        if (this.points.length > 400) this.points = this.points.slice(-300);
     }
-
-    draw(ctx) {
-        // Fondo
-        ctx.fillStyle = '#141419';
-        ctx.fillRect(this.rect.x, this.rect.y, this.rect.w, this.rect.h);
-        ctx.strokeStyle = '#646464';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(this.rect.x, this.rect.y, this.rect.w, this.rect.h);
-
-        const y0_px = this.rect.y + this.rect.h / 2;
-        
-        // Línea central (0)
-        ctx.beginPath();
-        ctx.moveTo(this.rect.x, y0_px);
-        ctx.lineTo(this.rect.x + this.rect.w, y0_px);
-        ctx.strokeStyle = '#505050';
+    draw(canvas) {
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width, H = canvas.height;
+        if (isLightMode) {
+            const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+            bgGrad.addColorStop(0, '#d1fae5');
+            bgGrad.addColorStop(1, '#a7f3d0');
+            ctx.fillStyle = bgGrad;
+        } else {
+            ctx.fillStyle = '#0a0710';
+        }
+        ctx.fillRect(0, 0, W, H);
+        const y0 = H / 2;
+        ctx.strokeStyle = isLightMode ? '#6ee7b7' : '#1e1530';
         ctx.lineWidth = 1;
-        ctx.stroke();
-
+        ctx.setLineDash([4, 8]);
+        ctx.beginPath(); ctx.moveTo(0, y0); ctx.lineTo(W, y0); ctx.stroke();
+        for (let i = 1; i <= 3; i++) {
+            ctx.beginPath(); ctx.moveTo(0, y0 - i/4*H/2); ctx.lineTo(W, y0 - i/4*H/2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, y0 + i/4*H/2); ctx.lineTo(W, y0 + i/4*H/2); ctx.stroke();
+        }
+        ctx.setLineDash([]);
         if (this.points.length < 2) return;
-
-        const max_t = this.points[this.points.length - 1].t;
-        const window_sec = 5.0;
-        const min_t = Math.max(0.0, max_t - window_sec);
-
-        // Filtrar puntos visibles
-        const viewPoints = this.points.filter(p => p.t >= min_t);
-        if (viewPoints.length < 2) return;
-
-        // Amplitud máxima visible para escalar
-        let max_abs_y = 0.1;
-        for (let p of viewPoints) {
-            if (Math.abs(p.y) > max_abs_y) max_abs_y = Math.abs(p.y);
-        }
-        max_abs_y *= 1.5;
-
-        // Calcular coordenadas en pantalla
-        const screenPoints = viewPoints.map(p => {
-            const px = this.rect.x + ((p.t - min_t) / window_sec) * this.rect.w;
-            const py = this.rect.y + this.rect.h / 2 - (p.y / max_abs_y) * (this.rect.h / 2);
-            return {px, py};
-        });
-
-        // Área bajo la curva
-        ctx.beginPath();
-        ctx.moveTo(screenPoints[0].px, y0_px);
-        for (let p of screenPoints) ctx.lineTo(p.px, p.py);
-        ctx.lineTo(screenPoints[screenPoints.length - 1].px, y0_px);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(0, 150, 255, 0.25)';
+        const max_t = this.points[this.points.length-1].t;
+        const window_sec = 5.0, min_t = Math.max(0, max_t - window_sec);
+        const vp = this.points.filter(p => p.t >= min_t);
+        if (vp.length < 2) return;
+        let maxY = 0.1;
+        for (let p of vp) if (Math.abs(p.y) > maxY) maxY = Math.abs(p.y);
+        maxY *= 1.5;
+        const sp = vp.map(p => ({
+            px: ((p.t - min_t) / window_sec) * W,
+            py: H/2 - (p.y / maxY) * (H/2)
+        }));
+        ctx.beginPath(); ctx.moveTo(sp[0].px, y0);
+        for (let p of sp) ctx.lineTo(p.px, p.py);
+        ctx.lineTo(sp[sp.length-1].px, y0); ctx.closePath();
+        ctx.fillStyle = isLightMode ? 'rgba(16, 185, 129, 0.1)' : 'rgba(232, 101, 42, 0.1)';
         ctx.fill();
-
-        // Línea de señal
-        ctx.beginPath();
-        ctx.moveTo(screenPoints[0].px, screenPoints[0].py);
-        for (let i = 1; i < screenPoints.length; i++) {
-            ctx.lineTo(screenPoints[i].px, screenPoints[i].py);
-        }
-        ctx.strokeStyle = '#00c8ff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        // Etiquetas
-        ctx.fillStyle = '#b4b4b4';
-        ctx.font = '12px Arial';
-        ctx.fillText(`${max_abs_y.toFixed(2)} m`, this.rect.x + 5, this.rect.y + 15);
-        ctx.fillText(`${(-max_abs_y).toFixed(2)} m`, this.rect.x + 5, this.rect.y + this.rect.h - 5);
-        ctx.fillText('0 m', this.rect.x + 5, y0_px - 5);
-        
-        ctx.fillText(`${min_t.toFixed(1)} s`, this.rect.x + 5, y0_px + 15);
-        ctx.fillText(`${(min_t + window_sec).toFixed(1)} s`, this.rect.x + this.rect.w - 35, y0_px + 15);
+        ctx.beginPath(); ctx.moveTo(sp[0].px, sp[0].py);
+        for (let i=1; i<sp.length; i++) ctx.lineTo(sp[i].px, sp[i].py);
+        ctx.strokeStyle = isLightMode ? '#10b981' : '#e8652a';
+        ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = isLightMode ? '#047857' : '#3a2a4a';
+        ctx.font = '10px "JetBrains Mono"';
+        ctx.fillText(`+${maxY.toFixed(3)}m`, 6, 14);
+        ctx.fillText(`-${maxY.toFixed(3)}m`, 6, H - 4);
+        ctx.fillText(`${(min_t + window_sec).toFixed(1)}s`, W - 36, y0 - 5);
     }
 }
 
 class CarSimulation {
     constructor(graph) {
         this.graph = graph;
-        
-        // Parámetros
-        this.m = 1000.0;
-        this.k = 20000.0;
-        this.c = 1500.0;
-        this.h = 0.1;
-        this.v_kmh = 30.0;
-        this.L = 2.0;
-        
-        this.wheel_dist = 1.325;
-        this.body_offset_x = -5.25;
-        this.body_offset_y = 30;
-        
-        this.running = false;
-        this.reset();
+        this.m = 1000; this.k = 20000; this.c = 1500;
+        this.h = 0.1; this.v_kmh = 30; this.L = 2.0;
+        this.wheel_dist = 1.2; this.body_offset_x = 3; this.body_offset_y = 31;
+        this.running = false; this.reset();
     }
-
     reset() {
-        this.time = 0.0;
-        this.car_x = 0.0;
-        this.y = 0.0;
-        this.v_y = 0.0;
-        this.prev_road = 0.0;
-        this.bumps = [5.0];
+        this.time = 0; this.car_x = 0; this.y = 0;
+        this.v_y = 0; this.prev_road = 0; this.bumps = [5.0];
         this.graph.points = [];
     }
-
     addBump() {
-        const last_x = Math.max(...this.bumps, this.car_x);
-        const new_x = Math.max(last_x + 3.0, this.car_x + 5.0);
-        this.bumps.push(new_x);
+        const lx = Math.max(...this.bumps, this.car_x);
+        this.bumps.push(Math.max(lx + 3, this.car_x + 5));
     }
-
     getRoadY(x) {
-        let total_y = 0.0;
-        for (let bx of this.bumps) {
-            if (x >= bx && x <= bx + this.L) {
-                total_y += this.h * Math.sin(Math.PI * (x - bx) / this.L);
-            }
-        }
-        return total_y;
+        let y = 0;
+        for (let bx of this.bumps)
+            if (x >= bx && x <= bx + this.L)
+                y += this.h * Math.sin(Math.PI * (x - bx) / this.L);
+        return y;
     }
-
     updatePhysics(dt) {
         if (!this.running) return;
-        
-        const velocity = this.v_kmh / 3.6; // m/s
-        this.car_x += velocity * dt;
+        this.car_x += (this.v_kmh / 3.6) * dt;
         this.time += dt;
-        
-        const road_f = this.getRoadY(this.car_x + this.wheel_dist);
-        const road_r = this.getRoadY(this.car_x - this.wheel_dist);
-        const road = (road_f + road_r) / 2.0;
-        
-        const road_vel = (this.time > dt) ? (road - this.prev_road) / dt : 0.0;
-        
-        // Ecuación diferencial 1-DOF
+        if (Math.random() < 0.005) this.addBump(); // Baches aleatorios
+        const road = this.getRoadY(this.car_x + this.wheel_dist);
+        const road_vel = this.time > dt ? (road - this.prev_road) / dt : 0;
         const accel = (-this.k * (this.y - road) - this.c * (this.v_y - road_vel)) / this.m;
-        
-        this.v_y += accel * dt;
-        this.y += this.v_y * dt;
-        
+        this.v_y += accel * dt; this.y += this.v_y * dt;
         this.prev_road = road;
         this.graph.addPoint(this.time, this.y);
     }
 
-    draw(ctx, canvasW, canvasH) {
-        // Cielo
-        ctx.fillStyle = '#87CEEB';
-        ctx.fillRect(0, 0, canvasW, canvasH);
-        
-        // Nubes
-        const cloudSpeed = 0.1;
-        const velocity = this.v_kmh / 3.6;
-        const scaleX = 50;
-        
-        ctx.fillStyle = '#FFFFFF';
-        const clouds = [[100, 80], [400, 50], [700, 100], [250, 120]];
-        for (let [cx, cy] of clouds) {
-            let shiftedX = cx - (this.time * velocity * cloudSpeed * scaleX);
-            // Módulo en JS con números negativos requiere truco
-            shiftedX = ((shiftedX + 50) % (canvasW + 100) + (canvasW + 100)) % (canvasW + 100) - 50;
+    draw(canvas) {
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width, H = canvas.height;
+
+        if (isLightMode) {
+            const sky = ctx.createLinearGradient(0, 0, 0, H * 0.75);
+            sky.addColorStop(0, '#38bdf8');
+            sky.addColorStop(1, '#bae6fd');
+            ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
             
-            ctx.beginPath(); ctx.arc(shiftedX, cy, 30, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(shiftedX + 25, cy - 15, 40, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(shiftedX + 50, cy, 30, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#fef08a';
+            ctx.beginPath(); ctx.arc(W * 0.8, H * 0.2, 40, 0, Math.PI*2); ctx.fill();
+        } else {
+            const sky = ctx.createLinearGradient(0, 0, 0, H * 0.75);
+            sky.addColorStop(0,    '#0d0820');
+            sky.addColorStop(0.25, '#1a0d35');
+            sky.addColorStop(0.55, '#6b1e3a');
+            sky.addColorStop(0.75, '#c04020');
+            sky.addColorStop(1,    '#e8782a');
+            ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+            const sunY = H * 0.72;
+            const sunGlow = ctx.createRadialGradient(W * 0.5, sunY, 0, W * 0.5, sunY, W * 0.5);
+            sunGlow.addColorStop(0,   'rgba(255,180,60,0.35)');
+            sunGlow.addColorStop(0.4, 'rgba(220,80,20,0.12)');
+            sunGlow.addColorStop(1,   'rgba(0,0,0,0)');
+            ctx.fillStyle = sunGlow; ctx.fillRect(0, 0, W, H);
         }
 
-        const baseY = 350;
-        const scaleY = 200; // px por metro
-        const carScreenX = 200;
+        const vel = this.v_kmh / 3.6;
+        const clouds = [[80,70],[340,45],[600,85],[210,110],[500,55]];
+        for (let [cx, cy] of clouds) {
+            let sx = cx - (this.time * vel * 0.1 * 50);
+            sx = ((sx + 50) % (W + 100) + (W + 100)) % (W + 100) - 50;
+            const cg = ctx.createRadialGradient(sx + 22, cy, 0, sx + 22, cy, 50);
+            if (isLightMode) {
+                cg.addColorStop(0, 'rgba(255,255,255,0.9)');
+                cg.addColorStop(1, 'rgba(255,255,255,0)');
+            } else {
+                cg.addColorStop(0, 'rgba(255,160,80,0.22)');
+                cg.addColorStop(1, 'rgba(180,60,30,0)');
+            }
+            ctx.fillStyle = cg;
+            ctx.beginPath(); ctx.arc(sx, cy, 26, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(sx+22, cy-13, 34, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(sx+44, cy, 26, 0, Math.PI*2); ctx.fill();
+        }
 
-        // Asfalto
+        ctx.fillStyle = isLightMode ? '#22c55e' : '#0d0516';
         ctx.beginPath();
-        ctx.moveTo(0, canvasH);
+        ctx.moveTo(0, H * 0.72);
+        for (let px = 0; px <= W; px += 6) {
+            const hillY = H * 0.72 - Math.sin(px * 0.012) * 18 - Math.sin(px * 0.007 + 1) * 12;
+            ctx.lineTo(px, hillY);
+        }
+        ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
+
+        const baseY = H * 0.74;
+        const scaleY = 200, scaleX = 50;
+        const carScreenX = W * 0.28;
+
         let roadPoints = [];
-        for (let px = 0; px <= canvasW; px += 4) {
-            let physX = this.car_x + (px - carScreenX) / scaleX;
-            let rY = this.getRoadY(physX);
-            let py = baseY - rY * scaleY;
-            ctx.lineTo(px, py);
-            roadPoints.push({x: px, y: py});
+        for (let px = 0; px <= W; px += 4) {
+            const physX = this.car_x + (px - carScreenX) / scaleX;
+            roadPoints.push({x: px, y: baseY - this.getRoadY(physX) * scaleY});
         }
-        ctx.lineTo(canvasW, canvasH);
-        ctx.closePath();
-        ctx.fillStyle = '#323232';
-        ctx.fill();
 
-        // Línea de la carretera
+        ctx.beginPath(); ctx.moveTo(0, H);
+        for (let p of roadPoints) ctx.lineTo(p.x, p.y);
+        ctx.lineTo(W, H); ctx.closePath();
+        ctx.fillStyle = isLightMode ? '#94a3b8' : '#12080a'; ctx.fill();
+
         ctx.beginPath();
-        ctx.moveTo(roadPoints[0].x, roadPoints[0].y);
-        for (let i=1; i<roadPoints.length; i++) ctx.lineTo(roadPoints[i].x, roadPoints[i].y);
-        ctx.strokeStyle = '#c8c8c8';
-        ctx.lineWidth = 3;
-        ctx.stroke();
+        for (let p of roadPoints) ctx.lineTo(p.x, p.y);
+        ctx.strokeStyle = isLightMode ? '#cbd5e1' : '#2a1520'; ctx.lineWidth = 2; ctx.stroke();
 
-        // Cálculos ruedas y chasis
-        const fwPhysX = this.car_x + this.wheel_dist;
-        const rwPhysX = this.car_x - this.wheel_dist;
-        
+        ctx.setLineDash([18, 14]);
+        ctx.beginPath(); ctx.moveTo(0, baseY + 12); ctx.lineTo(W, baseY + 12);
+        ctx.strokeStyle = isLightMode ? 'rgba(255,255,255,0.6)' : '#e8652a33'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.setLineDash([]);
+
+        if (!isLightMode) {
+            const roadGlow = ctx.createLinearGradient(0, baseY - 4, 0, baseY + 30);
+            roadGlow.addColorStop(0, 'rgba(200,80,30,0.15)');
+            roadGlow.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = roadGlow; ctx.fillRect(0, baseY - 4, W, 34);
+        }
+
         const fwPx = carScreenX + this.wheel_dist * scaleX;
         const rwPx = carScreenX - this.wheel_dist * scaleX;
-        
-        const fwPy = baseY - this.getRoadY(fwPhysX) * scaleY - 20;
-        const rwPy = baseY - this.getRoadY(rwPhysX) * scaleY - 20;
-        
+        const fwPy = baseY - this.getRoadY(this.car_x + this.wheel_dist) * scaleY - 20;
+        const rwPy = baseY - this.getRoadY(this.car_x - this.wheel_dist) * scaleY - 20;
         const bodyY = baseY - this.y * scaleY - 70;
-        
-        const dy = rwPy - fwPy;
-        const dx = fwPx - rwPx;
+        const dy = rwPy - fwPy, dx = fwPx - rwPx;
         const angleRad = Math.atan2(dy, dx);
-        
-        const fwBodyY = bodyY - (dy / 2.0);
-        const rwBodyY = bodyY + (dy / 2.0);
+        const fwBodyY = bodyY - dy/2, rwBodyY = bodyY + dy/2;
 
-        // Resortes visuales
-        ctx.strokeStyle = '#1e1e1e';
-        ctx.lineWidth = 5;
-        if (fwPy > fwBodyY + 35) {
-            ctx.beginPath(); ctx.moveTo(fwPx, fwBodyY + 35); ctx.lineTo(fwPx, fwPy); ctx.stroke();
-        }
-        if (rwPy > rwBodyY + 35) {
-            ctx.beginPath(); ctx.moveTo(rwPx, rwBodyY + 35); ctx.lineTo(rwPx, rwPy); ctx.stroke();
-        }
+        ctx.strokeStyle = isLightMode ? 'rgba(16, 185, 129, 0.4)' : '#e8652a55'; ctx.lineWidth = 3;
+        if (fwPy > fwBodyY + 35) { ctx.beginPath(); ctx.moveTo(fwPx, fwBodyY+35); ctx.lineTo(fwPx, fwPy); ctx.stroke(); }
+        if (rwPy > rwBodyY + 35) { ctx.beginPath(); ctx.moveTo(rwPx, rwBodyY+35); ctx.lineTo(rwPx, rwPy); ctx.stroke(); }
 
-        // Llantas
-        const wheelRadiusM = 20 / scaleY;
-        const spinAngle = (wheelRadiusM > 0) ? (this.car_x / wheelRadiusM) : 0;
+        const spinAngle = this.wheel_dist > 0 ? this.car_x / (20 / scaleY) : 0;
 
-        const drawWheel = (x, y, angle) => {
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.rotate(angle); // Girar visualmente por velocidad
-            if (wheelLoaded) {
-                ctx.drawImage(imgWheel, -24, -24, 48, 48); // scale_wheel = 48x48 en Pygame
-            } else {
-                ctx.fillStyle = '#1e1e1e';
-                ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI*2); ctx.fill();
-                ctx.fillStyle = '#969696';
-                ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
-                ctx.strokeStyle = '#c8c8c8'; ctx.lineWidth = 3;
-                for (let i=0; i<5; i++) {
-                    let theta = i * (2 * Math.PI / 5);
-                    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(theta)*20, Math.sin(theta)*20); ctx.stroke();
-                }
+        const drawWheel = (x, y, a) => {
+            ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+            if (wheelLoaded) { ctx.drawImage(imgWheel, -24, -24, 48, 48); }
+            else {
+                ctx.fillStyle = '#1a0a10'; ctx.beginPath(); ctx.arc(0,0,20,0,Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#4a2020'; ctx.beginPath(); ctx.arc(0,0,8,0,Math.PI*2); ctx.fill();
             }
             ctx.restore();
         };
@@ -489,300 +691,209 @@ class CarSimulation {
         drawWheel(fwPx, fwPy, spinAngle);
         drawWheel(rwPx, rwPy, spinAngle);
 
-        // Chasis
         ctx.save();
-        const wheelsMidX = (fwPx + rwPx) / 2.0;
-        const bodyCx = wheelsMidX + this.body_offset_x;
-        const bodyCy = bodyY + this.body_offset_y;
-        
-        ctx.translate(bodyCx, bodyCy);
-        ctx.rotate(-angleRad); // Canvas rotation es horario
-        
+        ctx.translate((fwPx + rwPx) / 2 + this.body_offset_x, bodyY + this.body_offset_y);
+        ctx.rotate(-angleRad);
         if (bodyLoaded) {
-            // car_body fue reescalado a ancho=230 en python
-            const aspect = imgBody.height / imgBody.width;
-            const targetW = 230;
-            const targetH = targetW * aspect;
-            // Dibujar imagen volteada horizontalmente si es necesario (pygame hizo flip en X)
+            const targetW = 230, targetH = targetW * (imgBody.height / imgBody.width);
             ctx.scale(-1, 1);
             ctx.drawImage(imgBody, -targetW/2, -targetH/2, targetW, targetH);
         } else {
-            ctx.fillStyle = '#c83232';
-            ctx.fillRect(-60, -20, 120, 40);
-            ctx.fillRect(-30, -50, 60, 30);
+            ctx.fillStyle = '#8b2020'; ctx.fillRect(-60,-20,120,40); ctx.fillRect(-30,-50,60,30);
         }
         ctx.restore();
     }
 }
 
-// ==========================================
-// 3. UI Y BUCLE PRINCIPAL
-// ==========================================
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+const gameCanvas  = document.getElementById('gameCanvas');
+const graphCanvas = document.getElementById('graphCanvas');
+const canvasWrap  = document.getElementById('canvas-wrap');
+const graphWrap   = document.getElementById('graph-wrap');
 
-const graph = new OscillationGraph({x: 0, y: 500, w: 950, h: 220});
-const sim = new CarSimulation(graph);
-
-// Sliders y UI
-const sliders = {
-    m: document.getElementById('slider-m'),
-    k: document.getElementById('slider-k'),
-    c: document.getElementById('slider-c'),
-    h: document.getElementById('slider-h'),
-    v: document.getElementById('slider-v')
-};
-const labels = {
-    m: document.getElementById('lbl-m'),
-    k: document.getElementById('lbl-k'),
-    c: document.getElementById('lbl-c'),
-    h: document.getElementById('lbl-h'),
-    v: document.getElementById('lbl-v')
-};
-
-const updateUIFromSim = () => {
-    sliders.m.value = sim.m; labels.m.innerText = `Masa: ${Math.round(sim.m)} kg`;
-    sliders.k.value = sim.k; labels.k.innerText = `Resorte (k): ${Math.round(sim.k)} N/m`;
-    sliders.c.value = sim.c; labels.c.innerText = `Amortig. (c): ${Math.round(sim.c)} N·s/m`;
-    sliders.h.value = sim.h * 100; labels.h.innerText = `Prof. Bache: ${(sim.h * 100).toFixed(1)} cm`;
-    sliders.v.value = sim.v_kmh; labels.v.innerText = `Velocidad: ${Math.round(sim.v_kmh)} km/h`;
-};
-
-const updateSimFromUI = () => {
-    sim.m = parseFloat(sliders.m.value);
-    sim.k = parseFloat(sliders.k.value);
-    sim.c = parseFloat(sliders.c.value);
-    sim.h = parseFloat(sliders.h.value) / 100.0;
-    sim.v_kmh = parseFloat(sliders.v.value);
-    updateUIFromSim();
-};
-
-for (let key in sliders) {
-    sliders[key].addEventListener('input', updateSimFromUI);
+function resizeCanvases() {
+    gameCanvas.width   = canvasWrap.clientWidth;
+    gameCanvas.height  = canvasWrap.clientHeight;
+    graphCanvas.width  = graphWrap.clientWidth;
+    graphCanvas.height = graphWrap.clientHeight;
 }
+resizeCanvases();
+window.addEventListener('resize', resizeCanvases);
 
-document.getElementById('btn-start').addEventListener('click', () => sim.running = true);
-document.getElementById('btn-pause').addEventListener('click', () => sim.running = false);
-document.getElementById('btn-reset').addEventListener('click', () => {
-    sim.reset();
-    sim.running = true;
+const graph = new OscillationGraph();
+const sim   = new CarSimulation(graph);
+
+const sliders = { m: document.getElementById('slider-m'), k: document.getElementById('slider-k'), c: document.getElementById('slider-c'), h: document.getElementById('slider-h'), v: document.getElementById('slider-v') };
+const valEls  = { m: document.getElementById('lbl-m-val'), k: document.getElementById('lbl-k-val'), c: document.getElementById('lbl-c-val'), h: document.getElementById('lbl-h-val'), v: document.getElementById('lbl-v-val') };
+
+let wasSobreamortiguado = false;
+const updateSimFromUI = () => {
+    sim.m = +sliders.m.value; sim.k = +sliders.k.value;
+    sim.c = +sliders.c.value; sim.h = +sliders.h.value / 100;
+    sim.v_kmh = +sliders.v.value;
+    valEls.m.textContent = Math.round(sim.m);
+    valEls.k.textContent = Math.round(sim.k);
+    valEls.c.textContent = Math.round(sim.c);
+    valEls.h.textContent = (sim.h * 100).toFixed(1);
+    valEls.v.textContent = Math.round(sim.v_kmh);
+
+    const zeta = sim.c / (2 * Math.sqrt(sim.m * sim.k));
+    const hudState = document.getElementById('hud-state');
+    if (hudState) {
+        const alertEl = document.getElementById('alert-sobre');
+        if (zeta < 0.99) {
+            hudState.textContent = 'Subamortiguado';
+            hudState.style.color = 'var(--amber)';
+            wasSobreamortiguado = false;
+            if (alertEl) alertEl.style.display = 'none';
+        } else if (zeta > 1.01) {
+            hudState.textContent = 'Sobreamortiguado';
+            hudState.style.color = 'var(--rose)';
+            if (!wasSobreamortiguado) {
+                if (alertEl) alertEl.style.display = 'block';
+                wasSobreamortiguado = true;
+            }
+        } else {
+            hudState.textContent = 'Críticamente amortiguado';
+            hudState.style.color = '#5dde9a';
+            wasSobreamortiguado = false;
+            if (alertEl) alertEl.style.display = 'none';
+        }
+    }
+};
+
+for (let k in sliders) sliders[k].addEventListener('input', updateSimFromUI);
+updateSimFromUI();
+
+document.getElementById('btn-sub').addEventListener('click', () => {
+    sliders.m.value = 1000; sliders.k.value = 20000; sliders.c.value = 1500;
+    updateSimFromUI();
 });
-document.getElementById('btn-bump').addEventListener('click', () => sim.addBump());
+document.getElementById('btn-crit').addEventListener('click', () => {
+    sliders.m.value = 1000; sliders.k.value = 25000; sliders.c.value = 10000;
+    updateSimFromUI();
+});
+document.getElementById('btn-sobre').addEventListener('click', () => {
+    sliders.m.value = 1000; sliders.k.value = 20000; sliders.c.value = 20000;
+    updateSimFromUI();
+});
+document.getElementById('btn-theme').addEventListener('click', (e) => {
+    isLightMode = !isLightMode;
+    if (isLightMode) {
+        document.documentElement.classList.add('light-mode');
+        e.target.textContent = '🌙 Noche';
+    } else {
+        document.documentElement.classList.remove('light-mode');
+        e.target.textContent = '☀️ Día';
+    }
+});
+document.getElementById('btn-start').addEventListener('click', () => { sim.running = true; });
+document.getElementById('btn-pause').addEventListener('click', () => { sim.running = false; });
+document.getElementById('btn-reset').addEventListener('click', () => { sim.reset(); sim.running = true; });
+document.getElementById('btn-bump').addEventListener('click',  () => sim.addBump());
+
+const statusDot = document.getElementById('status-dot');
+const statusLabel = document.getElementById('status-label');
 
 let lastTime = performance.now();
-function gameLoop(time) {
-    const dt = (time - lastTime) / 1000;
-    lastTime = time;
-
-    // Fixed timestep 0.016s para física como en python
-    if (dt > 0 && dt < 0.1) {
-        sim.updatePhysics(0.016); 
-    }
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    sim.draw(ctx, canvas.width, canvas.height);
-    graph.draw(ctx);
-
+function gameLoop(now) {
+    const dt = (now - lastTime) / 1000; lastTime = now;
+    if (dt > 0 && dt < 0.1) sim.updatePhysics(0.016);
+    sim.draw(gameCanvas);
+    graph.draw(graphCanvas);
+    document.getElementById('hud-time').textContent  = sim.time.toFixed(2) + ' s';
+    document.getElementById('hud-y').textContent     = sim.y.toFixed(3) + ' m';
+    document.getElementById('mc-vy').textContent     = sim.v_y.toFixed(2);
+    document.getElementById('mc-bumps').textContent  = sim.bumps.length;
+    document.getElementById('mc-wn').textContent     = Math.sqrt(sim.k / sim.m).toFixed(2);
+    document.getElementById('mc-zeta').textContent   = (sim.c / (2 * Math.sqrt(sim.m * sim.k))).toFixed(3);
+    statusDot.classList.toggle('running', sim.running);
+    statusLabel.textContent = sim.running ? 'corriendo' : 'detenido';
     requestAnimationFrame(gameLoop);
 }
-
-// Iniciar estado
-updateUIFromSim();
 requestAnimationFrame(gameLoop);
 
-
-// ==========================================
-// 4. CONTROLADOR DE GESTOS (MediaPipe)
-// ==========================================
-const videoElement = document.getElementById('input_video');
+// ── GESTOS ──
+const videoElement  = document.getElementById('input_video');
 const gestureCanvas = document.getElementById('gesture-canvas');
 const gCtx = gestureCanvas.getContext('2d');
-let camera = null;
-let hands = null;
-let gesturesActive = false;
+let camera = null, hands = null, gesturesActive = false;
+let activeParamId = null, rightYHistory = [], lastFistState = false;
+const fingerTips = [8,12,16,20], fingerPips = [6,10,14,18];
 
-// Estado del Gesto
-let activeParamId = null; // 'c', 'k', 'm', 'v', 'h'
-let rightYHistory = [];
-let lastFistState = false;
-
-const fingerTips = [8, 12, 16, 20];
-const fingerPips = [6, 10, 14, 18];
-const thumbTip = 4;
-const thumbIp = 3;
-
-function countFingers(landmarks, isRightHand) {
-    let count = 0;
-    // Pulgar (espejado por cámara)
-    // isRightHand del modelo (visto de frente) = Mano izquierda real si no está en espejo.
-    // Usamos heurísticas simples en X
-    if (isRightHand) {
-        if (landmarks[thumbTip].x < landmarks[thumbIp].x) count++;
-    } else {
-        if (landmarks[thumbTip].x > landmarks[thumbIp].x) count++;
-    }
-    for (let i = 0; i < 4; i++) {
-        if (landmarks[fingerTips[i]].y < landmarks[fingerPips[i]].y) count++;
-    }
-    return count;
+function countFingers(lm, isRight) {
+    let c = 0;
+    if (isRight) { if (lm[4].x < lm[3].x) c++; } else { if (lm[4].x > lm[3].x) c++; }
+    for (let i=0; i<4; i++) if (lm[fingerTips[i]].y < lm[fingerPips[i]].y) c++;
+    return c;
 }
-
-function getCenterY(landmarks) {
-    let sum = 0;
-    [0, 5, 9, 13, 17].forEach(i => sum += landmarks[i].y);
-    return sum / 5;
-}
+function getCenterY(lm) { let s=0; [0,5,9,13,17].forEach(i => s+=lm[i].y); return s/5; }
 
 function highlightGroup(param) {
-    ['m', 'k', 'c', 'h', 'v'].forEach(p => {
-        document.getElementById(`group-${p}`).classList.remove('slider-active');
-    });
-    if (param) document.getElementById(`group-${param}`).classList.add('slider-active');
+    ['m','k','c','h','v'].forEach(p => document.getElementById(`group-${p}`).classList.remove('active'));
+    if (param) document.getElementById(`group-${param}`).classList.add('active');
 }
 
 function onResults(results) {
-    gCtx.save();
-    gCtx.clearRect(0, 0, gestureCanvas.width, gestureCanvas.height);
-    // Dibujar video de fondo
+    gCtx.save(); gCtx.clearRect(0, 0, gestureCanvas.width, gestureCanvas.height);
     gCtx.drawImage(results.image, 0, 0, gestureCanvas.width, gestureCanvas.height);
-
-    let leftLm = null;
-    let rightLm = null;
-
+    let leftLm = null, rightLm = null;
     if (results.multiHandLandmarks && results.multiHandedness) {
-        for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+        for (let i=0; i<results.multiHandLandmarks.length; i++) {
             const marks = results.multiHandLandmarks[i];
-            const label = results.multiHandedness[i].label; // "Left" o "Right"
-            
-            // MediaPipe devuelve labels como si estuvieras viendo a otra persona.
-            // Con selfie-mode, "Right" de MP es tu mano izquierda en la pantalla.
-            if (label === 'Left') rightLm = marks; // Invertido
-            else leftLm = marks;
-
-            drawConnectors(gCtx, marks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
-            drawLandmarks(gCtx, marks, {color: '#FF0000', lineWidth: 1, radius: 2});
+            const label = results.multiHandedness[i].label;
+            if (label === 'Left') rightLm = marks; else leftLm = marks;
+            drawConnectors(gCtx, marks, HAND_CONNECTIONS, {color: '#e8652a', lineWidth: 1.5});
+            drawLandmarks(gCtx, marks, {color: '#f0a045', lineWidth: 1, radius: 2});
         }
     }
     gCtx.restore();
-
-    // Lógica
-    let lf = 0, rf = 0;
-    let newParam = null;
-    let actionTxt = "";
-
-    // Mano izquierda -> Selecciona param
-    if (leftLm) {
-        lf = countFingers(leftLm, false);
-        const map = {1: 'c', 2: 'k', 3: 'm', 4: 'v', 5: 'h'};
-        newParam = map[lf] || null;
-    }
-    
-    activeParamId = newParam;
-    highlightGroup(activeParamId);
-
-    // Mano derecha -> Ajustar valor o bache
+    let lf=0, rf=0, newParam=null, actionTxt='';
+    if (leftLm) { lf = countFingers(leftLm, false); newParam = {1:'c',2:'k',3:'m',4:'v',5:'h'}[lf] || null; }
+    activeParamId = newParam; highlightGroup(activeParamId);
     if (rightLm) {
         rf = countFingers(rightLm, true);
-        let isFist = (rf === 0);
-
-        if (isFist) {
-            actionTxt = "👊 BACHE!";
-            if (!lastFistState) {
-                sim.addBump(); // Evento OnFistDown
-            }
+        if (rf === 0) {
+            actionTxt = 'PUÑO (Sin acción)';
             rightYHistory = [];
         } else {
             let cy = getCenterY(rightLm);
-            rightYHistory.push(cy);
-            if (rightYHistory.length > 6) rightYHistory.shift();
-            
+            rightYHistory.push(cy); if (rightYHistory.length > 6) rightYHistory.shift();
             if (rightYHistory.length >= 2 && activeParamId) {
                 let recent = (rightYHistory[rightYHistory.length-1] + rightYHistory[rightYHistory.length-2]) / 2;
                 let old = (rightYHistory[0] + rightYHistory[1]) / 2;
-                let delta = (old - recent) * 18.0; // Sensibilidad
-                
-                // Limitar
-                if (delta > 1.0) delta = 1.0;
-                if (delta < -1.0) delta = -1.0;
-
+                let delta = Math.max(-1, Math.min(1, (old - recent) * 18));
                 if (Math.abs(delta) > 0.05) {
-                    actionTxt = delta > 0 ? "▲ Subiendo" : "▼ Bajando";
-                    
-                    // Modificar slider
-                    const SPEED = 0.012; // 1.2% por frame
+                    actionTxt = delta > 0 ? '▲' : '▼';
                     let s = sliders[activeParamId];
-                    let min = parseFloat(s.min);
-                    let max = parseFloat(s.max);
-                    let span = max - min;
-                    let cur = parseFloat(s.value);
-                    
-                    let nextVal = cur + (delta * span * SPEED);
-                    nextVal = Math.max(min, Math.min(max, nextVal));
-                    s.value = nextVal;
-                    
-                    // Disparar evento de input para sincronizar
+                    let min = +s.min, max = +s.max;
+                    s.value = Math.max(min, Math.min(max, +s.value + delta * (max - min) * 0.012));
                     s.dispatchEvent(new Event('input'));
                 }
             }
         }
-        lastFistState = isFist;
-    } else {
-        rightYHistory = [];
-        lastFistState = false;
-    }
-
-    // Actualizar HUD Texto
-    document.getElementById('txt-left').innerText = `IZQ: ${lf} dedos`;
-    document.getElementById('txt-right').innerText = `DER: ${rf} dedos`;
-    
-    const paramNames = {'c': 'Amortiguador (c)', 'k': 'Resorte (k)', 'm': 'Masa (m)', 'v': 'Velocidad', 'h': 'Prof. Bache'};
-    document.getElementById('txt-param').innerText = activeParamId ? `Select: ${paramNames[activeParamId]}` : `Select: Ninguna`;
-    document.getElementById('txt-action').innerText = actionTxt;
+        lastFistState = (rf === 0);
+    } else { rightYHistory = []; lastFistState = false; }
+    const pnames = {c:'Amortiguador',k:'Resorte k',m:'Masa',v:'Velocidad',h:'Bache'};
+    document.getElementById('txt-param').textContent   = activeParamId ? pnames[activeParamId] : '— sin selección';
+    document.getElementById('txt-left').textContent    = `IZQ: ${lf}`;
+    document.getElementById('txt-right').textContent   = `DER: ${rf}`;
+    document.getElementById('txt-action').textContent  = actionTxt;
 }
 
-// Inicializar Cámara al hacer click
 document.getElementById('btn-camera').addEventListener('click', async (e) => {
-    const btn = e.target;
-    if (gesturesActive) return; // Ya activo
-    
-    btn.innerText = "⏳ Cargando Modelos AI...";
-    btn.disabled = true;
-
+    if (gesturesActive) return;
+    const btn = e.target; btn.textContent = 'Cargando...'; btn.disabled = true;
     try {
-        hands = new Hands({locateFile: (file) => {
-            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-        }});
-        
-        hands.setOptions({
-            maxNumHands: 2,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.65,
-            minTrackingConfidence: 0.55
-        });
-        
+        hands = new Hands({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+        hands.setOptions({maxNumHands:2, modelComplexity:1, minDetectionConfidence:0.65, minTrackingConfidence:0.55});
         hands.onResults(onResults);
-
-        camera = new Camera(videoElement, {
-            onFrame: async () => {
-                await hands.send({image: videoElement});
-            },
-            width: 320,
-            height: 180
-        });
-
+        camera = new Camera(videoElement, { onFrame: async () => { await hands.send({image: videoElement}); }, width: 320, height: 180 });
         await camera.start();
-        gesturesActive = true;
-        btn.innerText = "✅ Cámara Activa";
-        btn.style.backgroundColor = "#2e7d32";
-        btn.style.color = "#fff";
-    } catch (err) {
-        console.error(err);
-        btn.innerText = "❌ Error con Cámara";
-        btn.style.backgroundColor = "#c62828";
-        alert("Asegúrate de dar permisos de cámara al navegador y ejecutar desde un servidor HTTP local.");
+        gesturesActive = true; btn.textContent = '✓ Cámara activa';
+    } catch(err) {
+        btn.textContent = '✗ Error — reintentar'; btn.disabled = false;
     }
 });
-
 </script>
 </body>
 </html>
