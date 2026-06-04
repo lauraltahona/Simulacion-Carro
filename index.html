@@ -500,7 +500,7 @@ class OscillationGraph {
         }
         ctx.fillRect(0, 0, W, H);
         const y0 = H / 2;
-        ctx.strokeStyle = isLightMode ? '#6ee7b7' : '#1e1530';
+        ctx.strokeStyle = isLightMode ? '#6b7280' : '#1e1530';
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 8]);
         ctx.beginPath(); ctx.moveTo(0, y0); ctx.lineTo(W, y0); ctx.stroke();
@@ -528,7 +528,7 @@ class OscillationGraph {
         ctx.fill();
         ctx.beginPath(); ctx.moveTo(sp[0].px, sp[0].py);
         for (let i=1; i<sp.length; i++) ctx.lineTo(sp[i].px, sp[i].py);
-        ctx.strokeStyle = isLightMode ? '#10b981' : '#e8652a';
+        ctx.strokeStyle = isLightMode ? '#00c853' : '#e8652a';
         ctx.lineWidth = 1.5; ctx.stroke();
         ctx.fillStyle = isLightMode ? '#047857' : '#3a2a4a';
         ctx.font = '10px "JetBrains Mono"';
@@ -543,7 +543,7 @@ class CarSimulation {
         this.graph = graph;
         this.m = 1000; this.k = 20000; this.c = 1500;
         this.h = 0.1; this.v_kmh = 30; this.L = 2.0;
-        this.wheel_dist = 1.2; this.body_offset_x = 3; this.body_offset_y = 31;
+        this.wheel_dist = 1.6; this.body_offset_x = 6; this.body_offset_y = 30;
         this.running = false; this.reset();
     }
     reset() {
@@ -680,7 +680,7 @@ class CarSimulation {
 
         const drawWheel = (x, y, a) => {
             ctx.save(); ctx.translate(x, y); ctx.rotate(a);
-            if (wheelLoaded) { ctx.drawImage(imgWheel, -24, -24, 48, 48); }
+            if (wheelLoaded) { ctx.drawImage(imgWheel, -30, -30, 60, 60); }
             else {
                 ctx.fillStyle = '#1a0a10'; ctx.beginPath(); ctx.arc(0,0,20,0,Math.PI*2); ctx.fill();
                 ctx.fillStyle = '#4a2020'; ctx.beginPath(); ctx.arc(0,0,8,0,Math.PI*2); ctx.fill();
@@ -695,7 +695,7 @@ class CarSimulation {
         ctx.translate((fwPx + rwPx) / 2 + this.body_offset_x, bodyY + this.body_offset_y);
         ctx.rotate(-angleRad);
         if (bodyLoaded) {
-            const targetW = 230, targetH = targetW * (imgBody.height / imgBody.width);
+            const targetW = 320, targetH = targetW * (imgBody.height / imgBody.width);
             ctx.scale(-1, 1);
             ctx.drawImage(imgBody, -targetW/2, -targetH/2, targetW, targetH);
         } else {

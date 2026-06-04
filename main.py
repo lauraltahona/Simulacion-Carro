@@ -702,7 +702,7 @@ def main():
 
     if MEDIAPIPE_OK and GestureController is not None:
         try:
-            gesture_ctrl    = GestureController(camera_index=1, show_window=False)
+            gesture_ctrl    = GestureController(camera_index=0, show_window=False)
             gesture_enabled = True
             print("[GESTOS] Controlador iniciado correctamente.")
         except Exception as e:
